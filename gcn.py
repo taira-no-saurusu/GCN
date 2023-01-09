@@ -147,9 +147,13 @@ def get_train_mask(arraySize:int,num_train=4):
 """
 リストの中に含まれるTrueの添字をリストで返す
 """
-def get_index(mask,tar):
-    return [i for i, x in enumerate(mask) if x == tar]
+def get_index(mask,tar,READ=False):
+    if READ:
+        return [i+1 for i, x in enumerate(mask) if x == tar]
+    else :
+        return [i for i, x in enumerate(mask) if x == tar]
 
+    
 """
 情報出力
 """
@@ -247,8 +251,10 @@ def exec_to_kmedoids(times = 50,TRAIN_ALL=False,DEFAULT = True, NUM_TRAIN = 4,EP
             min_EVM = h
             min_pred = pred
 
-    print(f"最大ARI({get_index(ARI_list,max_ari)}回目実行) : {max_ari}")
-    print(f"最小ARI({get_index(ARI_list,min_ari)}回目実行) : {min_ari}")
+
+
+    print(f"最大ARI({get_index(ARI_list,max_ari,READ = True)}回目実行) : {max_ari}")
+    print(f"最小ARI({get_index(ARI_list,min_ari,READ = True)}回目実行) : {min_ari}")
 
     return ARI_list, max_EVM, min_EVM, max_pred, min_pred
 
