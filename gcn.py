@@ -208,7 +208,7 @@ def execution(TRAIN_ALL=False,DEFAULT = True, NUM_TRAIN = 4,EPOCH = 30, VIEW_TRA
     return h, loss
 
 
-def exec_to_kmedoids(times = 50,TRAIN_ALL=False,DEFAULT = True, NUM_TRAIN = 4,EPOCH = 30, VIEW_TRAIN= False):
+def exec_to_kmedoids(times=50, TRAIN_ALL=False, DEFAULT=True, NUM_TRAIN=4, EPOCH=30, VIEW_TRAIN=False, N_CLUSTER=2):
     true_label = draw_karateclub(False)
     ARI_list = []
     max_EVM = None
@@ -246,7 +246,7 @@ def exec_to_kmedoids(times = 50,TRAIN_ALL=False,DEFAULT = True, NUM_TRAIN = 4,EP
             max_ari = ari
             max_EVM = h
             max_pred = pred
-            four_cluss = pred = KMedoids(n_clusters=4, random_state=0).fit_predict(embedded_vector_matrix)
+            four_cluss = pred = KMedoids(n_clusters=N_CLUSTER, random_state=0).fit_predict(embedded_vector_matrix)
 
             
         elif min_ari>ari :
