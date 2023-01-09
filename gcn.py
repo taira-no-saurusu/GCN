@@ -214,6 +214,7 @@ def exec_to_kmedoids(times = 50,TRAIN_ALL=False,DEFAULT = True, NUM_TRAIN = 4,EP
     max_EVM = None
     min_EVM = None
     max_pred = None
+    four_cluss = None
     min_pred = None
     max_ari = -100
     min_ari = 100
@@ -245,6 +246,8 @@ def exec_to_kmedoids(times = 50,TRAIN_ALL=False,DEFAULT = True, NUM_TRAIN = 4,EP
             max_ari = ari
             max_EVM = h
             max_pred = pred
+            four_cluss = pred = KMedoids(n_clusters=4, random_state=0).fit_predict(embedded_vector_matrix)
+
             
         elif min_ari>ari :
             min_ari = ari
@@ -256,7 +259,7 @@ def exec_to_kmedoids(times = 50,TRAIN_ALL=False,DEFAULT = True, NUM_TRAIN = 4,EP
     print(f"最大ARI({get_index(ARI_list,max_ari,READ = True)}回目実行) : {max_ari}")
     print(f"最小ARI({get_index(ARI_list,min_ari,READ = True)}回目実行) : {min_ari}")
 
-    return ARI_list, max_EVM, min_EVM, max_pred, min_pred
+    return ARI_list, max_EVM, min_EVM, max_pred, min_pred,four_cluss
 
     
 
