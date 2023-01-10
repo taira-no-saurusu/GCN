@@ -11,7 +11,7 @@ from sklearn_extra.cluster import KMedoids  # K-Medoids
 from sklearn.metrics.cluster import adjusted_rand_score  # ARI
 import random #train_mask生成
 import sys
-
+import csv
 
 
 class GCN(torch.nn.Module):
@@ -21,7 +21,7 @@ class GCN(torch.nn.Module):
         self.conv1 = GCNConv(34, 4)
         self.conv2 = GCNConv(4, 4)
         self.conv3 = GCNConv(4, 2)
-        self.classifier = Linear(2, 2)
+        self.classifier = Linear(2,2)
 
     """
     h   : 埋め込み結果
@@ -38,6 +38,19 @@ class GCN(torch.nn.Module):
         out = self.classifier(h)
 
         return out, h
+
+"""
+csvファイルを書き出す
+"""
+def read_csv(filename):
+    with open(filename, encoding='utf8', newline='') as f:
+        csvreader = csv.reader(f)
+        list = []
+        for row in csvreader:
+            for i in row:
+                list.append(int(i))
+
+    return torch.Tensor(list).to(torch.long)
 
 """
 学習状況を表示
@@ -61,7 +74,7 @@ networkxのGraphクラスからkarateclubを描画すると共に正解ラベル
 G: nwtworkグラフインスタンス
 draw : 描画するかどうか
 """
-def draw_karateclub(draw=True):
+def draw_karateclub(draw=False):
     G = nx.karate_club_graph()
     pos = nx.spring_layout(G)
 
@@ -90,18 +103,22 @@ def draw_embedded_vector(Y, colorlist=None):
         elif colorlist[i] == 1:
             ax.scatter(Y[i, 0], Y[i, 1], c="r")
             pass
+        elif colorlist[i] == 2:
+            ax.scatter(Y[i, 0], Y[i, 1], c="y")
+
+        elif colorlist[i] == 3:
+            ax.scatter(Y[i, 0], Y[i, 1], c="g")
 
     plt.show()
 
 """
 全てのノードを使って学習
 """
-def train_all(data, model, criterion, optimizer):
-    #正解ラベル取得
-    true_label = draw_karateclub(draw=False)
+def train_all(data, model, criterion, optimizer,TRUE_LABEL):
+
     optimizer.zero_grad()
     out, h = model(data.x, data.edge_index)
-    loss = criterion(out, true_label)
+    loss = criterion(out, torch.Tensor(TRUE_LABEL).to(torch.long))
     loss.backward()
     optimizer.step()
     return loss, h
@@ -113,12 +130,11 @@ data : グラフ情報
 model : GCNモデル
 train_mask : 学習に使うノードリスト 
 """
-def train_at_partial(data, model, criterion, optimizer):
-    #正解ラベル取得
-    true_label = draw_karateclub(draw=False)
+def train_at_partial(data, model, criterion, optimizer,TRUE_LABEL):
+   
     optimizer.zero_grad()
     out, h = model(data.x, data.edge_index)
-    loss = criterion(out[data.train_mask], true_label[data.train_mask])
+    loss = criterion(out[data.train_mask], torch.Tensor(TRUE_LABEL).to(torch.long)[data.train_mask])
     loss.backward()
     optimizer.step()
     return loss, h
@@ -128,16 +144,31 @@ num_trainの数だけ1、それ以外は0の配列を返す。
 arraySize : 配列の大きさ
 num_train : 1を格納する数
 """
-def get_train_mask(arraySize:int,num_train=4):
-
+def get_random_train_mask(arraySize,num_train,TRUE_LABEL):
+    mask = [False]*arraySize
     #例外処理
     if(num_train>arraySize):
         print("指定した配列の大きさより、1の格納数の方が大きいです")
         sys.exit("ERROR!!def get_tarin_mask : num_train>arraySize!!!")
+    
+    if 3 in TRUE_LABEL:#LOuvain法のクラスタ結果に基づいてクラスタリング
+        list = [[i for i, x in enumerate(TRUE_LABEL) if x == 0], [i for i, x in enumerate(TRUE_LABEL) if x == 1],[i for i, x in enumerate(TRUE_LABEL) if x == 2],[i for i, x in enumerate(TRUE_LABEL) if x == 3]]
+        for i in range(num_train):
+            if len(list[i%4])==0:
+                continue
+            index = random.choice(list[i % 4])
+            mask[index] = True
+            list[i % 4].remove(index)
+       
+    else :#Karateclubの正解データによってクラスタリング
+        list = [[i for i, x in enumerate(TRUE_LABEL) if x == 0],[i for i, x in enumerate(TRUE_LABEL) if x == 1]]
+        for i in range(num_train):
+            if len(list[i%2])==0:
+                continue
+            index = random.choice(list[i % 2])
+            mask[index]=True
+            list[i % 2].remove(index)
 
-    false_size = arraySize-num_train
-    mask = [False]*false_size + [True]*num_train
-    random.shuffle(mask)
     print(f"Trained_node_number_is : {get_index(mask,True)}")
     mask = torch.BoolTensor(mask)
     
@@ -168,10 +199,7 @@ def info(model,data):
     print(f"教師データ数(損失算出に使用) : {len(data.train_mask[data.train_mask])} ノード")
 
 
-def execution(TRAIN_ALL=False,DEFAULT = True, NUM_TRAIN = 4,EPOCH = 30, VIEW_TRAIN= False):
-
-    #Karateclub正解ラベル
-    TRUE_LABEL = draw_karateclub(False).detach().numpy()
+def execution(TRAIN_ALL,DEFAULT, NUM_TRAIN,EPOCH, VIEW_TRAIN, N_CLUSTER,TRUE_LABEL):
 
     # geometric.datasetのkarateclubのグラフインスタンスを取得
     DATA = KarateClub()[0]
@@ -188,16 +216,16 @@ def execution(TRAIN_ALL=False,DEFAULT = True, NUM_TRAIN = 4,EPOCH = 30, VIEW_TRA
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     if not(TRAIN_ALL) and not(DEFAULT):
-        train_mask = get_train_mask(arraySize=len(DATA.x),num_train=NUM_TRAIN)
+        train_mask = get_random_train_mask(len(DATA.x),NUM_TRAIN,TRUE_LABEL)
         DATA.train_mask = train_mask
 
     for epoch in range(EPOCH+1):
         # 全てのラベルで学習させる
         if TRAIN_ALL:
-            loss, h = train_all(DATA, model, criterion, optimizer)
+            loss, h = train_all(DATA, model, criterion, optimizer, TRUE_LABEL)
         #一部のラベルでで学習  
         else:
-            loss, h = train_at_partial(DATA, model, criterion, optimizer)
+            loss, h = train_at_partial(DATA, model, criterion, optimizer,TRUE_LABEL)
             
         # 学習状況の表示
         if VIEW_TRAIN:
@@ -207,14 +235,24 @@ def execution(TRAIN_ALL=False,DEFAULT = True, NUM_TRAIN = 4,EPOCH = 30, VIEW_TRA
                 time.sleep(0.1)
     return h, loss
 
+"""
+GCNによる埋め込みからkmedoidsによるクラスタリング、ARI算出までを任意の回数行う
 
-def exec_to_kmedoids(times=50, TRAIN_ALL=False, DEFAULT=True, NUM_TRAIN=4, EPOCH=30, VIEW_TRAIN=False, N_CLUSTER=2):
+times : 実施回数
+TRAIN_ALL : 全てのノード情報を用いて学習するか（通常は一部のノード情報を用いて学習）(bool)
+DEFAULT : karateclubインスタンスに設定されたデフォルトの一部のノード情報で学習するか(bool)
+NUM_TRAIN : 学習に利用するノード数(int)
+EPOCH : エポック(int)
+VIEW_TRAIN : 学習状況を表示するか(bool)
+N_CLUSTER = Kmedoidsのクラスタ数(bool)
+TRUE_LABEL = 全てのノードの正解ラベル情報(list)
+"""
+def exec_to_kmedoids(times, TRAIN_ALL, DEFAULT, NUM_TRAIN, EPOCH, VIEW_TRAIN, N_CLUSTER, TRUE_LABEL):
     true_label = draw_karateclub(False)
     ARI_list = []
     max_EVM = None
     min_EVM = None
     max_pred = None
-    four_cluss = None
     min_pred = None
     max_ari = -100
     min_ari = 100
@@ -222,22 +260,22 @@ def exec_to_kmedoids(times=50, TRAIN_ALL=False, DEFAULT=True, NUM_TRAIN=4, EPOCH
     for i in range(times):
         print(f"==========================={i+1}回目============================")
         #GCN実行
-        h,_ = execution(TRAIN_ALL, DEFAULT, NUM_TRAIN, EPOCH, VIEW_TRAIN)
+        h, _ = execution(TRAIN_ALL, DEFAULT, NUM_TRAIN, EPOCH, VIEW_TRAIN, N_CLUSTER, TRUE_LABEL)
 
         #ndarray化
         embedded_vector_matrix = h.detach().numpy()
 
         #正解ラベルによる埋め込みベクトルの可視化
-        draw_embedded_vector(embedded_vector_matrix)
+        draw_embedded_vector(embedded_vector_matrix,TRUE_LABEL)
 
         #kmedoids実行
-        pred = KMedoids(n_clusters=2, random_state=0).fit_predict(embedded_vector_matrix)
+        pred = KMedoids(n_clusters=N_CLUSTER, random_state=0).fit_predict(embedded_vector_matrix)
 
         #kmedoidsによるクラスタ結果による埋め込みベクトルの可視化
         draw_embedded_vector(embedded_vector_matrix, colorlist=pred)
 
         #ari算出
-        ari = adjusted_rand_score(true_label, pred)
+        ari = adjusted_rand_score(TRUE_LABEL, pred)
         ARI_list.append(ari)
         print(f"{i+1}回目 ARI : {ari}")
         print("")
@@ -246,20 +284,17 @@ def exec_to_kmedoids(times=50, TRAIN_ALL=False, DEFAULT=True, NUM_TRAIN=4, EPOCH
             max_ari = ari
             max_EVM = h
             max_pred = pred
-            four_cluss = pred = KMedoids(n_clusters=N_CLUSTER, random_state=0).fit_predict(embedded_vector_matrix)
-
+           
             
-        elif min_ari>ari :
+        if min_ari>ari :
             min_ari = ari
             min_EVM = h
             min_pred = pred
 
-
-
     print(f"最大ARI({get_index(ARI_list,max_ari,READ = True)}回目実行) : {max_ari}")
     print(f"最小ARI({get_index(ARI_list,min_ari,READ = True)}回目実行) : {min_ari}")
 
-    return ARI_list, max_EVM, min_EVM, max_pred, min_pred,four_cluss
+    return ARI_list, max_EVM, min_EVM, max_pred, min_pred
 
     
 
