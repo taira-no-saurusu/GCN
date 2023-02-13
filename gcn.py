@@ -8,16 +8,19 @@ from torch.nn import Linear
 from torch_geometric.nn import GCNConv
 import numpy as np
 from sklearn_extra.cluster import KMedoids  # K-Medoids
+from sklearn.cluster import KMeans # Kmeans
 from sklearn.metrics.cluster import adjusted_rand_score  # ARI
+from statistics import stdev #標準偏差
 import random #train_mask生成
 import sys
 import csv
+import torch_geometric.utils.convert
 
 
 class GCN(torch.nn.Module):
     def __init__(self):
         super(GCN, self).__init__()
-        torch.manual_seed(1234)
+        #torch.manual_seed(1234)
         self.conv1 = GCNConv(34, 4)
         self.conv2 = GCNConv(4, 4)
         self.conv3 = GCNConv(4, 2)
@@ -38,6 +41,85 @@ class GCN(torch.nn.Module):
         out = self.classifier(h)
 
         return out, h
+"""
+Tensor単位行列を得る
+"""
+def get_identity_matrix(size:int):
+    matrix = []
+    for i in range(size):
+        l = [0.]*size
+        l[i] = 1.
+        matrix.append(l)
+    return torch.Tensor(matrix)
+
+
+"""
+networkxのグラフインスタンスを生成
+"""
+def generate_Graph(name):
+    G = nx.Graph()
+
+    if name == "football":
+        f = open('football.txt', 'r')
+        datalist = f.readlines()
+
+        for l in datalist:
+            list = l.strip('\n').split(",")
+            if list[2] == '0':
+                continue
+            else:
+                G.add_edge(list[0], list[1], weight=int(list[2]))
+                G.add_edge(list[1], list[0], weight=int(list[2]))
+
+    elif name == "polbooks":
+        f = open('polbooks.txt', 'r')
+        datalist = f.readlines()
+
+        for l in datalist:
+            list = l.strip('\n').split(",")
+            if list[2] == '0':
+                continue
+            else:
+                G.add_edge(list[0], list[1], weight=int(list[2]))
+                G.add_edge(list[1], list[0], weight=int(list[2]))
+
+        pass
+
+    elif name == "karateclub":
+        G = nx.karate_club_graph()
+
+    else:
+        sys.exit("グラフ生成の引数の名前がおかしいです")
+    G = from_networkx(G)
+    G.x = get_identity_matrix(G.num_nodes)
+
+    return G
+
+
+"""
+label_listをテキストファイルから読み込んで返す
+"""
+def get_label_list(name):
+    label_list = []
+    if name == "football":
+        f = open('label_football.txt', 'r')
+        datalist = f.readlines()
+
+        for l in datalist:
+           label_list.append(int(l.rstrip("\n")))
+
+    elif name == "polbooks":
+        f = open('label_polbooks.txt', 'r')
+        datalist = f.readlines()
+
+        for l in datalist:
+           label_list.append(int(l.rstrip("\n")))
+
+    else:
+        sys.exit("グラフ生成の引数の名前がおかしいです")
+
+    return label_list
+
 
 """
 csvファイルを書き出す
@@ -140,36 +222,46 @@ def train_at_partial(data, model, criterion, optimizer,TRUE_LABEL):
     return loss, h
 
 """
-num_trainの数だけ1、それ以外は0の配列を返す。
+num_trainの数だけTrue、それ以外はFalseの配列を返す。
 arraySize : 配列の大きさ
-num_train : 1を格納する数
+num_train : Trueを格納する数
 """
 def get_random_train_mask(arraySize,num_train,TRUE_LABEL):
     mask = [False]*arraySize
-    #例外処理
-    if(num_train>arraySize):
+    # 例外処理
+    if (num_train > arraySize):
         print("指定した配列の大きさより、1の格納数の方が大きいです")
         sys.exit("ERROR!!def get_tarin_mask : num_train>arraySize!!!")
-    
-    if 3 in TRUE_LABEL:#LOuvain法のクラスタ結果に基づいてクラスタリング
-        list = [[i for i, x in enumerate(TRUE_LABEL) if x == 0], [i for i, x in enumerate(TRUE_LABEL) if x == 1],[i for i, x in enumerate(TRUE_LABEL) if x == 2],[i for i, x in enumerate(TRUE_LABEL) if x == 3]]
+    if 11 in TRUE_LABEL:  # footballのラベル生成
+        list = [[i for i, x in enumerate(TRUE_LABEL) if x == 0], [i for i, x in enumerate(TRUE_LABEL) if x == 1], [
+            i for i, x in enumerate(TRUE_LABEL) if x == 2], [i for i, x in enumerate(TRUE_LABEL) if x == 3], [i for i, x in enumerate(TRUE_LABEL) if x == 4], [i for i, x in enumerate(TRUE_LABEL) if x == 5], [i for i, x in enumerate(TRUE_LABEL) if x == 6], [i for i, x in enumerate(TRUE_LABEL) if x == 7], [i for i, x in enumerate(TRUE_LABEL) if x == 8], [i for i, x in enumerate(TRUE_LABEL) if x == 9], [i for i, x in enumerate(TRUE_LABEL) if x == 10], [i for i, x in enumerate(TRUE_LABEL) if x == 11]]
         for i in range(num_train):
-            if len(list[i%4])==0:
+            if len(list[i % 12]) == 0:
+                continue
+            index = random.choice(list[i % 12])
+            mask[index] = True
+            list[i % 12].remove(index)
+    elif 3 in TRUE_LABEL:  # LOuvain法のクラスタ結果に基づいてクラスタリング
+        list = [[i for i, x in enumerate(TRUE_LABEL) if x == 0], [i for i, x in enumerate(TRUE_LABEL) if x == 1], [
+            i for i, x in enumerate(TRUE_LABEL) if x == 2], [i for i, x in enumerate(TRUE_LABEL) if x == 3]]
+        for i in range(num_train):
+            if len(list[i % 4]) == 0:
                 continue
             index = random.choice(list[i % 4])
             mask[index] = True
             list[i % 4].remove(index)
-       
-    else :#Karateclubの正解データによってクラスタリング
-        list = [[i for i, x in enumerate(TRUE_LABEL) if x == 0],[i for i, x in enumerate(TRUE_LABEL) if x == 1]]
+
+    else:  # Karateclubの正解データによってクラスタリング
+        list = [[i for i, x in enumerate(TRUE_LABEL) if x == 0], [
+            i for i, x in enumerate(TRUE_LABEL) if x == 1]]
         for i in range(num_train):
-            if len(list[i%2])==0:
+            if len(list[i % 2]) == 0:
                 continue
             index = random.choice(list[i % 2])
-            mask[index]=True
+            mask[index] = True
             list[i % 2].remove(index)
 
-    print(f"Trained_node_number_is : {get_index(mask,True)}")
+    #print(f"Trained_node_number_is : {get_index(mask,True)}")
     mask = torch.BoolTensor(mask)
     
     return mask
@@ -199,10 +291,7 @@ def info(model,data):
     print(f"教師データ数(損失算出に使用) : {len(data.train_mask[data.train_mask])} ノード")
 
 
-def execution(TRAIN_ALL,DEFAULT, NUM_TRAIN,EPOCH, VIEW_TRAIN, N_CLUSTER,TRUE_LABEL):
-
-    # geometric.datasetのkarateclubのグラフインスタンスを取得
-    DATA = KarateClub()[0]
+def execution(TRAIN_ALL,DEFAULT, NUM_TRAIN,EPOCH, VIEW_TRAIN,TRUE_LABEL,DATA):
 
     # GCNモデルの初期化
     model = GCN()
@@ -238,16 +327,16 @@ def execution(TRAIN_ALL,DEFAULT, NUM_TRAIN,EPOCH, VIEW_TRAIN, N_CLUSTER,TRUE_LAB
 """
 GCNによる埋め込みからkmedoidsによるクラスタリング、ARI算出までを任意の回数行う
 
-times : 実施回数
-TRAIN_ALL : 全てのノード情報を用いて学習するか（通常は一部のノード情報を用いて学習）(bool)
-DEFAULT : karateclubインスタンスに設定されたデフォルトの一部のノード情報で学習するか(bool)
-NUM_TRAIN : 学習に利用するノード数(int)
-EPOCH : エポック(int)
-VIEW_TRAIN : 学習状況を表示するか(bool)
-N_CLUSTER = Kmedoidsのクラスタ数(bool)
-TRUE_LABEL = 全てのノードの正解ラベル情報(list)
+    times        : 実施回数
+    TRAIN_ALL    : 全てのノード情報を用いて学習するか（通常は一部のノード情報を用いて学習）(bool)
+    DEFAULT      : karateclubインスタンスに設定されたデフォルトの一部のノード情報で学習するか(bool)
+    NUM_TRAIN    : 学習に利用するノード数(int)
+    EPOCH        : エポック(int)
+    VIEW_TRAIN   : 学習状況を表示するか(bool)
+    N_CLUSTER    : Kmedoidsのクラスタ数(bool)
+    TRUE_LABEL   : 全てのノードの正解ラベル情報(list)   
 """
-def exec_to_kmedoids(times, TRAIN_ALL, DEFAULT, NUM_TRAIN, EPOCH, VIEW_TRAIN, N_CLUSTER, TRUE_LABEL):
+def exec_to_kmedoids(times, TRAIN_ALL, DEFAULT, NUM_TRAIN, EPOCH, VIEW_TRAIN,VIEW_CLUSTERING, N_CLUSTER, TRUE_LABEL,METHOD,DATA=None):
     true_label = draw_karateclub(False)
     ARI_list = []
     max_EVM = None
@@ -256,29 +345,50 @@ def exec_to_kmedoids(times, TRAIN_ALL, DEFAULT, NUM_TRAIN, EPOCH, VIEW_TRAIN, N_
     min_pred = None
     max_ari = -100
     min_ari = 100
+    DATA = None
+    if DATA == None:
+        DATA = KarateClub()[0]
+
+
+    #print(f"{METHOD}で実行しまず")
 
     for i in range(times):
-        print(f"==========================={i+1}回目============================")
+
+        """
+        下の表示は一時的に削除
+        """
+        #print(f"==========================={i+1}回目============================")
         #GCN実行
-        h, _ = execution(TRAIN_ALL, DEFAULT, NUM_TRAIN, EPOCH, VIEW_TRAIN, N_CLUSTER, TRUE_LABEL)
+        h, _ = execution(TRAIN_ALL, DEFAULT, NUM_TRAIN, EPOCH, VIEW_TRAIN, TRUE_LABEL,DATA)
 
         #ndarray化
         embedded_vector_matrix = h.detach().numpy()
 
-        #正解ラベルによる埋め込みベクトルの可視化
-        draw_embedded_vector(embedded_vector_matrix,TRUE_LABEL)
+        pred = None
+        #クラスタリング実行
+        if METHOD=="kmedoids":
+            pred = KMedoids(n_clusters=N_CLUSTER, random_state=0).fit_predict(embedded_vector_matrix)
 
-        #kmedoids実行
-        pred = KMedoids(n_clusters=N_CLUSTER, random_state=0).fit_predict(embedded_vector_matrix)
-
-        #kmedoidsによるクラスタ結果による埋め込みベクトルの可視化
-        draw_embedded_vector(embedded_vector_matrix, colorlist=pred)
-
+        elif METHOD=="kmeans":
+            pred = KMeans(n_clusters = N_CLUSTER,random_state=0).fit_predict(embedded_vector_matrix)
+        else :
+            sys.exit("kmedoidsでもkmeansでもありません")
         #ari算出
         ari = adjusted_rand_score(TRUE_LABEL, pred)
         ARI_list.append(ari)
-        print(f"{i+1}回目 ARI : {ari}")
-        print("")
+        if VIEW_CLUSTERING:
+            print(
+                f"==========================={i+1}回目============================")
+            # 正解ラベルによる埋め込みベクトルの可視化
+            print(f"埋め込み結果")
+            draw_embedded_vector(embedded_vector_matrix, TRUE_LABEL)
+
+            # kmedoidsによるクラスタ結果による埋め込みベクトルの可視化
+            print(f"クラスタリング結果")
+            draw_embedded_vector(embedded_vector_matrix, colorlist=pred)
+
+            print(f"{i+1}回目 ARI : {ari}")
+
 
         if ari>max_ari :
             max_ari = ari
@@ -293,6 +403,8 @@ def exec_to_kmedoids(times, TRAIN_ALL, DEFAULT, NUM_TRAIN, EPOCH, VIEW_TRAIN, N_
 
     print(f"最大ARI({get_index(ARI_list,max_ari,READ = True)}回目実行) : {max_ari}")
     print(f"最小ARI({get_index(ARI_list,min_ari,READ = True)}回目実行) : {min_ari}")
+    print(f"平均ARI : {np.mean(ARI_list)}")
+    print(f"標準偏差 : {stdev(ARI_list)}")
 
     return ARI_list, max_EVM, min_EVM, max_pred, min_pred
 
