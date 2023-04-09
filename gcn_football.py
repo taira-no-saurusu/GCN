@@ -344,6 +344,8 @@ def exec_to_kmedoids(times, NUM_TRAIN, EPOCH, VIEW_TRAIN,VIEW_CLUSTERING, N_CLUS
     #print(f"{METHOD}で実行しまず")
 
     for i in range(times):
+        # 100x100用(1回の埋め込みに対して100回クラスタリングとari算出を実行)
+        ari_array = []
 
         """
         下の表示は一時的に削除
@@ -356,17 +358,21 @@ def exec_to_kmedoids(times, NUM_TRAIN, EPOCH, VIEW_TRAIN,VIEW_CLUSTERING, N_CLUS
         embedded_vector_matrix = h.detach().numpy()
 
         pred = None
-        #クラスタリング実行
-        if METHOD=="kmedoids":
-            pred = KMedoids(n_clusters=N_CLUSTER).fit_predict(embedded_vector_matrix)
 
-        elif METHOD=="kmeans":
-            pred = KMeans(n_clusters = N_CLUSTER).fit_predict(embedded_vector_matrix)
-        else :
-            sys.exit("kmedoidsでもkmeansでもありません")
-        #ari算出
-        ari = adjusted_rand_score(TRUE_LABEL, pred)
-        ARI_list.append(ari)
+        for s in range(100):
+            #クラスタリング実行
+            if METHOD=="kmedoids":
+                pred = KMedoids(n_clusters=N_CLUSTER).fit_predict(embedded_vector_matrix)
+
+            elif METHOD=="kmeans":
+                pred = KMeans(n_clusters = N_CLUSTER).fit_predict(embedded_vector_matrix)
+            else :
+                sys.exit("kmedoidsでもkmeansでもありません")
+            #ari算出
+            ari = adjusted_rand_score(TRUE_LABEL, pred)
+            ari_array.append(ari)
+
+        ARI_list.append(max(ari_array))
         if VIEW_CLUSTERING:
             print(
                 f"==========================={i+1}回目============================")
