@@ -15,16 +15,18 @@ import random #train_mask生成
 import sys
 import csv
 import torch_geometric.utils.convert
+from sklearn.decomposition import PCA
+from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 
 
 class GCN(torch.nn.Module):
     def __init__(self):
         super(GCN, self).__init__()
         #torch.manual_seed(1234)
-        self.conv1 = GCNConv(34, 4)
-        self.conv2 = GCNConv(4, 4)
-        self.conv3 = GCNConv(4, 2)
-        self.classifier = Linear(2,2)
+        self.conv1 = GCNConv(34, 12)
+        self.conv2 = GCNConv(12, 8)
+        self.conv3 = GCNConv(8, 4)
+        self.classifier = Linear(4,2)
 
     """
     h   : 埋め込み結果
@@ -207,7 +209,7 @@ def train_all(data, model, criterion, optimizer,TRUE_LABEL):
 
 
 """
-ランダムに選択された一部のノード情報をのみを使って学習
+ランダムに選択された一部のノード情報のみを使って学習
 data : グラフ情報
 model : GCNモデル
 train_mask : 学習に使うノードリスト 
@@ -337,7 +339,6 @@ GCNによる埋め込みからkmedoidsによるクラスタリング、ARI算出
     TRUE_LABEL   : 全てのノードの正解ラベル情報(list)   
 """
 def exec_to_kmedoids(times, TRAIN_ALL, DEFAULT, NUM_TRAIN, EPOCH, VIEW_TRAIN,VIEW_CLUSTERING, N_CLUSTER, TRUE_LABEL,METHOD,DATA=None):
-    true_label = draw_karateclub(False)
     ARI_list = []
     max_EVM = None
     min_EVM = None
@@ -420,5 +421,57 @@ def exec_to_kmedoids(times, TRAIN_ALL, DEFAULT, NUM_TRAIN, EPOCH, VIEW_TRAIN,VIE
     return ARI_list, max_EVM, min_EVM, max_pred, min_pred
 
     
+# グラフ埋め込みを実行して、埋め込みベクトルを主成分分析を行い、寄与率を返す
+def exec_to_pca(TRAIN_ALL, DEFAULT, NUM_TRAIN, EPOCH, VIEW_TRAIN, TRUE_LABEL, DATA):
+    # GCN実行(100回埋め込みを行って最もARIが高い時の埋め込みベクトルを取得)
+    evm = get_best_EVM(TRAIN_ALL, DEFAULT, NUM_TRAIN,
+                     EPOCH, VIEW_TRAIN, TRUE_LABEL, DATA)
+    
+    # ndarray化
+    embedded_vector_matrix = evm.detach().numpy()
 
-     
+    # 主成分分析
+    pca = PCA()
+    pca.fit(embedded_vector_matrix)
+    # 寄与率を取得
+    eigenvalues = pca.explained_variance_ratio_
+
+    #指数表現からfloatに変換
+    float_array = convert_to_float_array(eigenvalues)
+    return  float_array
+
+
+#埋め込みを100回実行して、word法でクラスタリングした時に最もARIが高い時の埋め込みベクトルを返す
+def get_best_EVM(TRAIN_ALL, DEFAULT, NUM_TRAIN, EPOCH, VIEW_TRAIN, TRUE_LABEL, DATA):
+    ARI_list = []
+    max_EVM = None
+    max_ari = -100
+
+    for i in range(100):
+        #GCN実行
+        h, _ = execution(TRAIN_ALL, DEFAULT, NUM_TRAIN,
+                         EPOCH, VIEW_TRAIN, TRUE_LABEL, DATA)
+        #ndarray化
+        embedded_vector_matrix = h.detach().numpy()
+
+        #クラスタリング実行
+        pred = KMeans(n_clusters=2).fit_predict(embedded_vector_matrix)
+
+        #ari算出
+        ari = adjusted_rand_score(TRUE_LABEL, pred)
+        ARI_list.append(ari)
+        if ari>max_ari :
+            max_ari = ari
+            max_EVM = h
+    
+    return max_EVM
+
+
+"""
+指数表現の数値が格納されたリストを少数第3位で四捨五入したfloatのリストに変換する
+"""
+def convert_to_float_array(array):
+    float_array = []
+    for i in range(len(array)):
+        float_array.append(round(array[i], 5))
+    return float_array

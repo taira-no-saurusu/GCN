@@ -14,6 +14,7 @@ import random #train_mask生成
 import sys
 import csv
 import torch_geometric.utils.convert
+from sklearn.decomposition import PCA
 
 
 class GCN(torch.nn.Module):
@@ -396,6 +397,18 @@ def exec_to_kmedoids(times, NUM_TRAIN, EPOCH, VIEW_TRAIN,VIEW_CLUSTERING, N_CLUS
 
     return ARI_list, max_EVM, min_EVM, max_pred, min_pred
 
+#グラフ埋め込みを実行して、埋め込みベクトルを主成分分析を行い、固有値を返す
+def exec_to_pca(NUM_TRAIN, EPOCH, VIEW_TRAIN, TRUE_LABEL,DATA=None):
+    #GCN実行
+    h, _ = execution( NUM_TRAIN, EPOCH, VIEW_TRAIN, TRUE_LABEL,DATA)
+    #ndarray化
+    embedded_vector_matrix = h.detach().numpy()
+    #主成分分析
+    pca = PCA()
+    pca.fit(embedded_vector_matrix)
+    #固有値
+    eigenvalues = pca.explained_variance_
+    return eigenvalues
     
 
      
